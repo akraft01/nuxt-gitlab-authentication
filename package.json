@@ -1,0 +1,22 @@
+{
+  "name": "nuxt-app",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare"
+  },
+  "dependencies": {
+    "@antfu/eslint-config": "^2.24.0",
+    "@nuxt/ui": "^2.18.3",
+    "eslint": "^9.8.0",
+    "nuxt": "^3.12.4",
+    "vue": "latest"
+  },
+  "overrides": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0"
+  }
+}

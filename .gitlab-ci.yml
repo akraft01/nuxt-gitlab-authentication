@@ -4,7 +4,8 @@ image: artifactory.cloud.statcan.ca/docker/cimg/node:current
 pages:
   script:
     # Grab the GitLab Pages URL and strip out the domain, leaving only the path
-    - NUXT_APP_BASE_URL=/`echo "$CI_PAGES_URL" | grep -oP 'https?://[^/]+/\K.*'`/
+    #- NUXT_APP_BASE_URL=/`echo "$CI_PAGES_URL" | grep -oP 'https?://[^/]+/\K.*'`/
+    - NUXT_APP_BASE_URL=/
     - export NUXT_APP_BASE_URL
     # Nuxt Generate
     - npm install

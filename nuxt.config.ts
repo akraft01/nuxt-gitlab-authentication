@@ -1,9 +1,33 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
+import { defineNuxtConfig } from 'nuxt/config';
+
 export default defineNuxtConfig({
-  future: {
-    compatibilityVersion: 4,
+  app: {
+    baseURL: '/nuxt-gitlab-authentication-experiment/',
+    head: {
+      title: 'GitLab Repo Viewer',
+      meta: [
+        { charset: 'utf-8' },
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        { hid: 'description', name: 'description', content: 'View your GitLab repositories easily with this app.' }
+      ],
+      link: [
+        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' }
+      ],
+    },
   },
+
   devtools: { enabled: true },
   modules: ['@nuxt/ui'],
-  compatibilityDate: '2024-07-17',
+
+  vite: {
+    resolve: {
+      alias: {
+        '~/app': './app', 
+      },
+    },
+  },
+
+  compatibilityDate: '2024-08-12',
+
+  ssr: false
 });

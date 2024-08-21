@@ -30,6 +30,10 @@ const GITLAB_HOST_URL = 'https://gitlab.k8s.cloud.statcan.ca/';
 const userName = ref<string | null>(null);
 const userAvatar = ref<string | null>(null);
 
+
+
+
+
 // Form state
 const contact = ref({ name: '', email: '' });
 const businessPartnerContact = ref({ name: '', email: '' });
@@ -43,10 +47,41 @@ const gates = ref({
   authorityToOperate: { status: '', date: '' }
 });
 
+
 // Submission feedback state
 const submissionStatus = ref<string | null>(null);
 const fileExistsStatus = ref<string | null>(null);
 const currentFileName = ref<string | null>(null);
+
+// Fetch the user's access level for the selected repository
+async function fetchUserAccessLevel(repositoryId: number): Promise<number | null> {
+  try {
+    console.log('Fetching user access level for repository:', repositoryId);
+    
+    const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${repositoryId}/members`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    console.log('Response from GitLab members API:', response.data);
+
+    const userData = response.data.find((user: any) => user.username === userName.value);
+
+    if (userData) {
+      console.log(`User ${userName.value} found with access level:`, userData.access_level);
+      return userData.access_level; // Log access level here
+    } else {
+      console.log(`User ${userName.value} not found in the repository members.`);
+      return null;
+    }
+  } catch (error: any) {
+    console.error('Error fetching user access level:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+
 
 // Fetch user information from GitLab
 async function fetchUserInfo() {
@@ -56,6 +91,8 @@ async function fetchUserInfo() {
   }
 
   try {
+    console.log('Fetching user information with access token:', accessToken);
+
     const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/user`, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -63,14 +100,15 @@ async function fetchUserInfo() {
     });
 
     const userData = response.data;
-    userName.value = userData.name;
+    userName.value = userData.username; // Ensure we are using the username (not the display name)
     userAvatar.value = userData.avatar_url;
 
-    console.log('User information:', userData);
+    console.log('User information fetched successfully:', userData);
   } catch (error: any) {
     console.error('Error fetching user information:', error.response?.data || error.message);
   }
 }
+
 
 // Fetch repositories from GitLab that the user has access to
 async function fetchRepositories() {
@@ -120,17 +158,44 @@ function handleRepositorySelection(event: Event) {
   }
 }
 
-// Lock the selected repository to prevent changes
+// Lock the selected repository to prevent changes and fetch access level
 async function lockSelection() {
   if (selectedRepository) {
     isLocked.value = true;
     console.log('Repository selection locked:', selectedRepository);
 
-    await checkForYamlFiles(); // Check for existing YAML files
+    // Verify that userName is correctly set
+    console.log('Current user:', userName.value);
+
+    // Fetch the user's access level for the selected repository
+    const userAccessLevel = await fetchUserAccessLevel(selectedRepository.id);
+
+    // Check access level and log appropriately
+    if (userAccessLevel === 50 || userAccessLevel === 40) {
+      console.log('User is Owner or Maintainer');
+      // Proceed with the file editing logic
+      await checkForYamlFiles(); // Check for existing YAML files
+    } else if (userAccessLevel === 30) {
+      console.log('User is Developer');
+      submissionStatus.value = 'You will submit your changes via merge request.';
+    } else if (userAccessLevel === 20) {
+      console.log('User is Reporter');
+      submissionStatus.value = 'You can view the data but cannot edit the file.';
+    } else if (userAccessLevel === null) {
+      console.log('Unable to determine user access level.');
+      submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
+    } else {
+      console.log('User is Guest or not a member');
+      submissionStatus.value = 'You do not have permission to view or edit this file.';
+    }
   } else {
     console.error('No repository selected to lock.');
   }
 }
+
+
+
+
 
 // Check if form_data.yaml or any versioned file exists
 // Check if form_data.yaml exists
@@ -172,52 +237,67 @@ async function fileExists(filePath: string) {
 
 // Load YAML data into the form
 async function loadYamlData(fileName: string) {
-  try {
-    const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(fileName)}/raw`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      params: {
-        ref: 'main',
-      },
-    });
+  const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!);
 
-    const yamlData = parse(response.data);
-    contact.value = yamlData.contact || { name: '', email: '' };
-    businessPartnerContact.value = yamlData.businessPartnerContact || { name: '', email: '' };
-    businessPartnerDivisionFrc.value = yamlData.businessPartnerDivisionFrc || '';
-    dpmoJiraKey.value = yamlData.dpmoJiraKey || '';
-    peCode.value = yamlData.peCode || '';
-    wid.value = yamlData.wid || '';
-    fiscal.value = yamlData.fiscal || [];
-    gates.value = yamlData.gates || {
-      accessibility: { status: '', date: '' },
-      authorityToOperate: { status: '', date: '' }
-    };
+  // Access level thresholds
+  const OWNER_ACCESS_LEVEL = 50;
+  const MAINTAINER_ACCESS_LEVEL = 40;
+  const DEVELOPER_ACCESS_LEVEL = 30;
+  const REPORTER_ACCESS_LEVEL = 20;
 
-    console.log('Loaded YAML data into form:', yamlData);
-  } catch (error: any) {
-    console.error('Error loading YAML data:', error.response?.data || error.message);
+  console.log('User access level:', userAccessLevel);
+
+  if (userAccessLevel === null) {
+    submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
+    return;
+  }
+
+  // Allow owners and maintainers to edit the file
+  if (userAccessLevel >= OWNER_ACCESS_LEVEL || userAccessLevel >= MAINTAINER_ACCESS_LEVEL) {
+    try {
+      const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(fileName)}/raw`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          ref: 'main',
+        },
+      });
+
+      const yamlData = parse(response.data);
+      contact.value = yamlData.contact || { name: '', email: '' };
+      businessPartnerContact.value = yamlData.businessPartnerContact || { name: '', email: '' };
+      businessPartnerDivisionFrc.value = yamlData.businessPartnerDivisionFrc || '';
+      dpmoJiraKey.value = yamlData.dpmoJiraKey || '';
+      peCode.value = yamlData.peCode || '';
+      wid.value = yamlData.wid || '';
+      fiscal.value = yamlData.fiscal || [];
+      gates.value = yamlData.gates || {
+        accessibility: { status: '', date: '' },
+        authorityToOperate: { status: '', date: '' },
+      };
+
+      console.log('Loaded YAML data into form:', yamlData);
+
+      // Set submission status to indicate edit permission
+      submissionStatus.value = 'You can edit this file.';
+    } catch (error: any) {
+      console.error('Error loading YAML data:', error.response?.data || error.message);
+      submissionStatus.value = 'Error loading YAML data.';
+    }
+  } else if (userAccessLevel >= DEVELOPER_ACCESS_LEVEL && userAccessLevel < MAINTAINER_ACCESS_LEVEL) {
+    // Developers can view the file but need to submit changes as a merge request
+    submissionStatus.value = 'You can view this file, but any changes will be submitted as a merge request.';
+  } else if (userAccessLevel >= REPORTER_ACCESS_LEVEL && userAccessLevel < DEVELOPER_ACCESS_LEVEL) {
+    // Reporters can view but not edit
+    submissionStatus.value = 'You can view this file, but you do not have permission to edit it.';
+  } else {
+    // Guests or lower roles cannot view or edit the file
+    submissionStatus.value = 'You do not have permission to view or edit this file.';
   }
 }
 
-// Delete an old version of the YAML file
-async function deleteOldYamlFile(fileName: string) {
-  try {
-    await axios.delete(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(fileName)}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-      data: {
-        branch: 'main',
-        commit_message: `Delete old version ${fileName}`,
-      },
-    });
-    console.log(`Deleted old YAML file: ${fileName}`);
-  } catch (error: any) {
-    console.error(`Error deleting old YAML file ${fileName}:`, error.response?.data || error.message);
-  }
-}
+
 
 // Save or update YAML file in the selected repository
 async function saveYamlToRepository(yamlData: string) {
@@ -275,19 +355,87 @@ async function saveYamlToRepository(yamlData: string) {
   }
 }
 
+// Create a merge request with the YAML changes (for developers)
+async function createMergeRequest(yamlData: string) {
+  try {
+    const branchName = `feature/update-${new Date().getTime()}`;
+    
+    // Step 1: Create a new branch
+    await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/branches`, {
+      branch: branchName,
+      ref: 'main',
+    }, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      }
+    });
+
+    // Step 2: Commit the changes to the new branch
+    await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(currentFileName.value || 'form_data.yaml')}`, {
+      branch: branchName,
+      content: yamlData,
+      commit_message: 'Proposed changes to YAML data',
+    }, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      }
+    });
+
+    // Step 3: Create a merge request
+    await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/merge_requests`, {
+      source_branch: branchName,
+      target_branch: 'main',
+      title: 'Proposed changes to YAML data',
+    }, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      }
+    });
+
+    console.log('Merge request created successfully');
+  } catch (error: any) {
+    console.error('Error creating merge request:', error.response?.data || error.message);
+    throw error;
+  }
+}
+
+
+const userAccessLevel = ref<number | null>(null);
+  function generateYamlData(): string {
+  return stringify({
+    contact: contact.value,
+    businessPartnerContact: businessPartnerContact.value,
+    businessPartnerDivisionFrc: businessPartnerDivisionFrc.value,
+    dpmoJiraKey: dpmoJiraKey.value,
+    peCode: peCode.value,
+    wid: wid.value,
+    fiscal: fiscal.value,
+    gates: gates.value,
+  });
+}
+
+
 // Form submission handler
-function handleSubmit() {
+async function handleSubmit() {
+  const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!);
+
+  const OWNER_ACCESS_LEVEL = 50;
+  const MAINTAINER_ACCESS_LEVEL = 40;
+  const DEVELOPER_ACCESS_LEVEL = 30;
+
+  console.log('User access level on submit:', userAccessLevel);
+
+  if (userAccessLevel === null) {
+    submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
+    return;
+  }
+
   if (!isLocked.value) {
-    console.error('Repository selection is not locked. Lock the selection before submitting.');
     submissionStatus.value = 'Repository selection is not locked. Lock the selection before submitting.';
     return;
   }
 
-  console.log('Form submitted');
-  console.log('Selected repository on submit:', selectedRepository);
-
   if (!selectedRepository) {
-    console.error('No repository selected.');
     submissionStatus.value = 'No repository selected.';
     return;
   }
@@ -303,8 +451,29 @@ function handleSubmit() {
     gates: gates.value,
   });
 
-  saveYamlToRepository(yamlData);
+  if (userAccessLevel >= OWNER_ACCESS_LEVEL || userAccessLevel >= MAINTAINER_ACCESS_LEVEL) {
+    try {
+      await saveYamlToRepository(yamlData);
+      submissionStatus.value = 'YAML file saved successfully!';
+    } catch (error: any) {
+      console.error('Error saving YAML file:', error.response?.data || error.message);
+      submissionStatus.value = 'Error saving YAML file.';
+    }
+  } else if (userAccessLevel >= DEVELOPER_ACCESS_LEVEL) {
+    try {
+      await createMergeRequest(yamlData);  // Developer submits a merge request
+      submissionStatus.value = 'Your changes have been submitted for review.';
+    } catch (error: any) {
+      console.error('Error creating merge request:', error.response?.data || error.message);
+      submissionStatus.value = 'Error submitting merge request.';
+    }
+  } else {
+    submissionStatus.value = 'You do not have permission to edit this file.';
+  }
 }
+
+
+
 
 // Add fiscal years to fiscal array
 function toggleFiscalYear(year: number) {
@@ -422,9 +591,9 @@ onMounted(() => {
         </form>
 
         <!-- Display submission status -->
-        <div v-if="submissionStatus" :class="submissionStatus.startsWith('Error') ? 'bg-red-500 dark:bg-red-700 text-white p-4 rounded' : 'bg-green-500 dark:bg-green-700 text-white p-4 rounded'" class="mt-4">
-          <p>{{ submissionStatus }}</p>
-        </div>
+        <div v-if="submissionStatus" :class="submissionStatus.startsWith('Error') ? 'bg-red-500 text-white p-4 rounded' : 'bg-green-500 text-white p-4 rounded'" class="mt-4">
+  <p>{{ submissionStatus }}</p>
+</div>
       </div>
     </u-card>
   </u-container>

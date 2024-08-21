@@ -1,23 +1,36 @@
 <script setup>
-import { computed } from 'vue';
+import { ref, onMounted } from 'vue';
+import { generateCodeVerifier, generateCodeChallenge } from './pkce';
 
-// https:// gitlab.example.com/oauth/authorize?client_id=APP_ID&redirect_uri=REDIRECT_URI&response_type=code&state=STATE&scope=REQUESTED_SCOPES&code_challenge=CODE_CHALLENGE&code_challenge_method=S256
-
+const CLIENT_ID = '620c86ee3984d2790655b72a6470ed7a0e7073236e6e0165e85dee0df815458e';  // Client ID
+const REDIRECT_URI = 'http://localhost:3000/auth';
+const SCOPES = 'read_user api';
 const GITLAB_HOST_URL = 'https://gitlab.k8s.cloud.statcan.ca/';
-const CLIENT_ID = '527851127ac7d235263d0e622367161a5ee700db0b5460c98fd9ccaa03e392b5';
-const REDIRECT_URI = 'http://localhost:3000/auth/';
-const SCOPES = 'REQUESTED_SCOPES';
-const CODE_CHALLENGE = 'CODE_CHALLENGE';
-const CODE_CHALLENGE_METHOD = 'S256';
 
-const authUrl = computed(() => {
-  const encodedClientId = encodeURIComponent(CLIENT_ID);
-  const encodedRedirectUri = encodeURIComponent(REDIRECT_URI);
-  const encodedScopes = encodeURIComponent(SCOPES);
-  const encodedCodeChallenge = encodeURIComponent(CODE_CHALLENGE);
-  const encodedCodeChallengeMethod = encodeURIComponent(CODE_CHALLENGE_METHOD);
+const authUrl = ref(''); 
 
-  return `${GITLAB_HOST_URL}/oauth/authorize?client_id=${encodedClientId}&redirect_uri=${encodedRedirectUri}&response_type=code&state=STATE&scope=${encodedScopes}&code_challenge=${encodedCodeChallenge}&code_challenge_method=${encodedCodeChallengeMethod}`;
+onMounted(async () => {
+  console.log('app.vue onMounted triggered');
+
+ 
+  if (process.client) {
+    const codeVerifier = generateCodeVerifier();  // Declare codeVerifier inside the if block
+    console.log('Generated codeVerifier:', codeVerifier);
+
+    localStorage.setItem('code_verifier', codeVerifier);  // Use localStorage instead of sessionStorage
+    console.log('Stored codeVerifier:', localStorage.getItem('code_verifier'));
+
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+    const encodedClientId = encodeURIComponent(CLIENT_ID);
+    const encodedRedirectUri = encodeURIComponent(REDIRECT_URI);
+    const encodedScopes = encodeURIComponent(SCOPES);
+    const encodedCodeChallenge = encodeURIComponent(codeChallenge);
+    const encodedCodeChallengeMethod = encodeURIComponent('S256');
+
+    authUrl.value = `${GITLAB_HOST_URL}/oauth/authorize?client_id=${encodedClientId}&redirect_uri=${encodedRedirectUri}&response_type=code&state=STATE&scope=${encodedScopes}&code_challenge=${encodedCodeChallenge}&code_challenge_method=${encodedCodeChallengeMethod}`;
+    console.log('Auth URL generated:', authUrl.value);
+  }
 });
 </script>
 
@@ -27,7 +40,7 @@ const authUrl = computed(() => {
       <u-card class="mt-10">
         <template #header>
           <div class="flex justify-between">
-            <h1>Welcome to Nuxt UI Starter</h1>
+            <h1>Welcome to Nuxt UAuth App</h1>
             <color-scheme>
               <u-select
                 v-model="$colorMode.preference"
@@ -37,13 +50,7 @@ const authUrl = computed(() => {
           </div>
         </template>
         <div class="flex justify-between">
-          <u-button
-            icon="i-heroicons-book-open"
-            to="https://ui.nuxt.com"
-            target="_blank"
-          >
-            Open Nuxt UI Documentation
-          </u-button>
+          
 
           <u-button
             icon="i-heroicons-book-open"

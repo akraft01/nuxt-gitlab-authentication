@@ -20,7 +20,7 @@ if (process.client) {
   if (window.location.hostname === 'localhost') {
     REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
   } else {
-    REDIRECT_URI = 'https://your-gitlab-pages-url/auth';  // GitLab Pages environment (Replace with your actual GitLab Pages URL)
+    REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment';  // GitLab Pages environment 
   }
 }
 

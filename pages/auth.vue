@@ -6,26 +6,27 @@ const route = useRoute();
 const router = useRouter();
 let codeVerifier = '';
 
-if (process.client) {
-  codeVerifier = localStorage.getItem('code_verifier');  // Use localStorage
+// Dynamically determine REDIRECT_URI based on the environment
+let REDIRECT_URI = '';
+
+if (typeof window !== 'undefined') {
+  if (window.location.hostname === 'localhost') {
+    REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
+  } else {
+    REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment/auth';  // GitLab Pages environment
+  }
+}
+
+// Safely retrieve code_verifier from localStorage in the client environment
+if (typeof window !== 'undefined') {
+  codeVerifier = localStorage.getItem('code_verifier');
 }
 
 const CLIENT_ID = '620c86ee3984d2790655b72a6470ed7a0e7073236e6e0165e85dee0df815458e';  // Client ID
 const CLIENT_SECRET = 'gloas-12450902bc72319cabe4b6ced5bacf5db6fdd7ea692e8adc536c78c6401effe0';  // Client Secret
-
-// Dynamically set the REDIRECT_URI based on the environment
-let REDIRECT_URI = '';
-
-if (process.client) {
-  if (window.location.hostname === 'localhost') {
-    REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
-  } else {
-    REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment';  // GitLab Pages environment 
-  }
-}
-
 const GITLAB_HOST_URL = 'https://gitlab.k8s.cloud.statcan.ca/';
 
+// Get the authorization code from the query parameters
 const code = route.query.code;
 
 console.log('Auth page loaded');
@@ -35,13 +36,13 @@ console.log('Query params:', route.query);
 async function exchangeCodeForToken() {
   if (!code) {
     console.error('No authorization code found in query parameters.');
-    router.push('/');
+    await router.push('/');  // Ensure the router.push is awaited to avoid async issues
     return;
   }
 
   if (!codeVerifier) {
     console.error('No code verifier found in storage.');
-    router.push('/');
+    await router.push('/');  // Ensure the router.push is awaited to avoid async issues
     return;
   }
 
@@ -53,24 +54,26 @@ async function exchangeCodeForToken() {
       client_secret: CLIENT_SECRET,  
       grant_type: 'authorization_code',
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: REDIRECT_URI,  // Use the dynamically set REDIRECT_URI
       code_verifier: codeVerifier,
     });
 
     const accessToken = response.data.access_token;
     console.log('Access token received:', accessToken);
 
-    if (process.client) {
+    // Store the access token in localStorage if the client is present
+    if (typeof window !== 'undefined') {
       localStorage.setItem('access_token', accessToken);  
     }
-    router.push('/repositories');
+    
+    await router.push('/repositories');  // Navigate to the repositories page after successful login
   } catch (error) {
     console.error('Error exchanging code for token:', error);
     console.error('Error details:', error.response ? error.response.data : error.message);
   }
 }
 
-exchangeCodeForToken();
+exchangeCodeForToken();  // Call the function to handle the token exchange
 </script>
 
 <template>

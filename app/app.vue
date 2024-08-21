@@ -10,14 +10,13 @@ const authUrl = ref('');
 
 onMounted(async () => {
   console.log('app.vue onMounted triggered');
-
-  if (process.client) {
+  let REDIRECT_URI = '';
+  if (typeof window !== 'undefined') {
     // Dynamically set the REDIRECT_URI based on the environment
-    let REDIRECT_URI;
     if (window.location.hostname === 'localhost') {
       REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
     } else {
-      REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment';  // GitLab Pages environment 
+      REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment/auth';  // GitLab Pages environment (make sure it points to your GitLab Pages auth endpoint)
     }
 
     console.log('REDIRECT_URI set to:', REDIRECT_URI);
@@ -41,6 +40,7 @@ onMounted(async () => {
   }
 });
 </script>
+
 
 <template>
   <div>

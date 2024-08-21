@@ -9,9 +9,20 @@ let codeVerifier = '';
 if (process.client) {
   codeVerifier = localStorage.getItem('code_verifier');  // Use localStorage
 }
+
 const CLIENT_ID = '620c86ee3984d2790655b72a6470ed7a0e7073236e6e0165e85dee0df815458e';  // Client ID
 const CLIENT_SECRET = 'gloas-12450902bc72319cabe4b6ced5bacf5db6fdd7ea692e8adc536c78c6401effe0';  // Client Secret
-const REDIRECT_URI = 'http://localhost:3000/auth';
+
+// Dynamically set the REDIRECT_URI based on the environment
+let REDIRECT_URI = '';
+
+if (process.client) {
+  if (window.location.hostname === 'localhost') {
+    REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
+  } else {
+    REDIRECT_URI = 'https://your-gitlab-pages-url/auth';  // GitLab Pages environment (Replace with your actual GitLab Pages URL)
+  }
+}
 
 const GITLAB_HOST_URL = 'https://gitlab.k8s.cloud.statcan.ca/';
 

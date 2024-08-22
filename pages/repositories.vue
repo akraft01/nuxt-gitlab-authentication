@@ -167,6 +167,8 @@ async function lockSelection() {
     // Verify that userName is correctly set
     console.log('Current user:', userName.value);
 
+    await checkForYamlFiles(); // Check for existing YAML files
+
     // Fetch the user's access level for the selected repository
     const userAccessLevel = await fetchUserAccessLevel(selectedRepository.id);
 
@@ -177,16 +179,16 @@ async function lockSelection() {
       await checkForYamlFiles(); // Check for existing YAML files
     } else if (userAccessLevel === 30) {
       console.log('User is Developer');
-      submissionStatus.value = 'You will submit your changes via merge request.';
+      submissionStatus.value = 'You have a Developer role. You will submit your changes via merge request.';
     } else if (userAccessLevel === 20) {
       console.log('User is Reporter');
-      submissionStatus.value = 'You can view the data but cannot edit the file.';
+      submissionStatus.value = 'You have a Reporter role. You can view the data but cannot edit the file.';
     } else if (userAccessLevel === null) {
       console.log('Unable to determine user access level.');
       submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
     } else {
       console.log('User is Guest or not a member');
-      submissionStatus.value = 'You do not have permission to view or edit this file.';
+      submissionStatus.value = 'You have a Guest role. You can view the data but cannot edit the file.';
     }
   } else {
     console.error('No repository selected to lock.');
@@ -196,8 +198,6 @@ async function lockSelection() {
 
 
 
-
-// Check if form_data.yaml or any versioned file exists
 // Check if form_data.yaml exists
 async function checkForYamlFiles() {
   const baseFileName = 'form_data.yaml';
@@ -237,9 +237,10 @@ async function fileExists(filePath: string) {
 
 // Load YAML data into the form
 async function loadYamlData(fileName: string) {
-  const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!);
+  // Simulate the user being a developer for testing
+  const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!); 
 
-  // Access level thresholds
+    // Access level thresholds
   const OWNER_ACCESS_LEVEL = 50;
   const MAINTAINER_ACCESS_LEVEL = 40;
   const DEVELOPER_ACCESS_LEVEL = 30;
@@ -247,55 +248,50 @@ async function loadYamlData(fileName: string) {
 
   console.log('User access level:', userAccessLevel);
 
-  if (userAccessLevel === null) {
-    submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
-    return;
-  }
+  try {
+    // Directly attempt to load the YAML data regardless of access level
+    console.log(`Attempting to load file: ${fileName} for repository ID: ${selectedRepository?.id}`);
+    
+    const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(fileName)}/raw`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      params: {
+        ref: 'main',
+      },
+    });
 
-  // Allow owners and maintainers to edit the file
-  if (userAccessLevel >= OWNER_ACCESS_LEVEL || userAccessLevel >= MAINTAINER_ACCESS_LEVEL) {
-    try {
-      const response = await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(fileName)}/raw`, {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-        params: {
-          ref: 'main',
-        },
-      });
+    const yamlData = parse(response.data);
+    
+    // Fill form with the loaded data
+    contact.value = yamlData.contact || { name: '', email: '' };
+    businessPartnerContact.value = yamlData.businessPartnerContact || { name: '', email: '' };
+    businessPartnerDivisionFrc.value = yamlData.businessPartnerDivisionFrc || '';
+    dpmoJiraKey.value = yamlData.dpmoJiraKey || '';
+    peCode.value = yamlData.peCode || '';
+    wid.value = yamlData.wid || '';
+    fiscal.value = yamlData.fiscal || [];
+    gates.value = yamlData.gates || {
+      accessibility: { status: '', date: '' },
+      authorityToOperate: { status: '', date: '' },
+    };
 
-      const yamlData = parse(response.data);
-      contact.value = yamlData.contact || { name: '', email: '' };
-      businessPartnerContact.value = yamlData.businessPartnerContact || { name: '', email: '' };
-      businessPartnerDivisionFrc.value = yamlData.businessPartnerDivisionFrc || '';
-      dpmoJiraKey.value = yamlData.dpmoJiraKey || '';
-      peCode.value = yamlData.peCode || '';
-      wid.value = yamlData.wid || '';
-      fiscal.value = yamlData.fiscal || [];
-      gates.value = yamlData.gates || {
-        accessibility: { status: '', date: '' },
-        authorityToOperate: { status: '', date: '' },
-      };
+    console.log('Loaded YAML data into form:', yamlData);
 
-      console.log('Loaded YAML data into form:', yamlData);
-
-      // Set submission status to indicate edit permission
-      submissionStatus.value = 'You can edit this file.';
-    } catch (error: any) {
-      console.error('Error loading YAML data:', error.response?.data || error.message);
-      submissionStatus.value = 'Error loading YAML data.';
+    submissionStatus.value = 'File loaded successfully!';
+  } catch (error: any) {
+    console.error('Error loading YAML data:', error.response?.data || error.message);
+    
+    if (error.response?.status === 403) {
+      submissionStatus.value = 'You do not have permission to view this file.';
+    } else if (error.response?.status === 404) {
+      submissionStatus.value = 'The requested file was not found.';
+    } else {
+      submissionStatus.value = 'An error occurred while loading the file.';
     }
-  } else if (userAccessLevel >= DEVELOPER_ACCESS_LEVEL && userAccessLevel < MAINTAINER_ACCESS_LEVEL) {
-    // Developers can view the file but need to submit changes as a merge request
-    submissionStatus.value = 'You can view this file, but any changes will be submitted as a merge request.';
-  } else if (userAccessLevel >= REPORTER_ACCESS_LEVEL && userAccessLevel < DEVELOPER_ACCESS_LEVEL) {
-    // Reporters can view but not edit
-    submissionStatus.value = 'You can view this file, but you do not have permission to edit it.';
-  } else {
-    // Guests or lower roles cannot view or edit the file
-    submissionStatus.value = 'You do not have permission to view or edit this file.';
   }
 }
+
 
 
 
@@ -357,47 +353,88 @@ async function saveYamlToRepository(yamlData: string) {
 
 // Create a merge request with the YAML changes (for developers)
 async function createMergeRequest(yamlData: string) {
+  const branchName = `dev-changes-${Date.now()}`; // Generate a unique branch name
+  const commitMessage = "Developer changes to form_data.yaml";
+
   try {
-    const branchName = `feature/update-${new Date().getTime()}`;
-    
     // Step 1: Create a new branch
     await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/branches`, {
       branch: branchName,
-      ref: 'main',
+      ref: 'main', // Create the new branch from 'main'
     }, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-      }
+      },
     });
 
-    // Step 2: Commit the changes to the new branch
-    await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent(currentFileName.value || 'form_data.yaml')}`, {
+    console.log(`Branch ${branchName} created.`);
+
+    // Step 2: Check if the file exists in the repository
+    let fileExists = false;
+    try {
+      await axios.get(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/${encodeURIComponent('form_data.yaml')}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        params: {
+          ref: branchName, // Check in the new branch
+        },
+      });
+      fileExists = true;
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        fileExists = false; // File does not exist
+      } else {
+        throw error; // If other error, throw it
+      }
+    }
+
+    // Step 3: Commit changes to the new branch
+    const commitPayload = {
       branch: branchName,
       content: yamlData,
-      commit_message: 'Proposed changes to YAML data',
-    }, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      }
-    });
+      commit_message: commitMessage,
+    };
 
-    // Step 3: Create a merge request
-    await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/merge_requests`, {
+    if (fileExists) {
+      // Update the existing file
+      await axios.put(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/form_data.yaml`, commitPayload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      console.log('File updated in branch:', branchName);
+    } else {
+      // Create a new file
+      await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/repository/files/form_data.yaml`, commitPayload, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      console.log('New file created in branch:', branchName);
+    }
+
+    // Step 4: Create a merge request from the new branch to main
+    const response = await axios.post(`${GITLAB_HOST_URL}/api/v4/projects/${selectedRepository?.id}/merge_requests`, {
       source_branch: branchName,
       target_branch: 'main',
-      title: 'Proposed changes to YAML data',
+      title: 'Merge Request: Developer changes to form_data.yaml',
     }, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
-      }
+      },
     });
 
-    console.log('Merge request created successfully');
+    console.log('Merge request created:', response.data);
+    submissionStatus.value = 'Your changes have been submitted for review.';
   } catch (error: any) {
     console.error('Error creating merge request:', error.response?.data || error.message);
-    throw error;
+    submissionStatus.value = 'Error submitting merge request.';
   }
 }
+
+
+
 
 
 const userAccessLevel = ref<number | null>(null);
@@ -415,62 +452,63 @@ const userAccessLevel = ref<number | null>(null);
 }
 
 
+const isLoading = ref(false); // Tracks the loading state
+
 // Form submission handler
 async function handleSubmit() {
-  const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!);
+  isLoading.value = true;
 
-  const OWNER_ACCESS_LEVEL = 50;
-  const MAINTAINER_ACCESS_LEVEL = 40;
-  const DEVELOPER_ACCESS_LEVEL = 30;
+  try {
+    const userAccessLevel = await fetchUserAccessLevel(selectedRepositoryId!);  
+    const OWNER_ACCESS_LEVEL = 50;
+    const MAINTAINER_ACCESS_LEVEL = 40;
+    const DEVELOPER_ACCESS_LEVEL = 30;
 
-  console.log('User access level on submit:', userAccessLevel);
+    console.log('User access level on submit:', userAccessLevel);
 
-  if (userAccessLevel === null) {
-    submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
-    return;
-  }
+    if (userAccessLevel === null) {
+      submissionStatus.value = 'Unable to determine your permissions. Please try again or contact support.';
+      return;
+    }
 
-  if (!isLocked.value) {
-    submissionStatus.value = 'Repository selection is not locked. Lock the selection before submitting.';
-    return;
-  }
+    if (!isLocked.value) {
+      submissionStatus.value = 'Repository selection is not locked. Lock the selection before submitting.';
+      return;
+    }
 
-  if (!selectedRepository) {
-    submissionStatus.value = 'No repository selected.';
-    return;
-  }
+    if (!selectedRepository) {
+      submissionStatus.value = 'No repository selected.';
+      return;
+    }
 
-  const yamlData = stringify({
-    contact: contact.value,
-    businessPartnerContact: businessPartnerContact.value,
-    businessPartnerDivisionFrc: businessPartnerDivisionFrc.value,
-    dpmoJiraKey: dpmoJiraKey.value,
-    peCode: peCode.value,
-    wid: wid.value,
-    fiscal: fiscal.value,
-    gates: gates.value,
-  });
+    const yamlData = stringify({
+      contact: contact.value,
+      businessPartnerContact: businessPartnerContact.value,
+      businessPartnerDivisionFrc: businessPartnerDivisionFrc.value,
+      dpmoJiraKey: dpmoJiraKey.value,
+      peCode: peCode.value,
+      wid: wid.value,
+      fiscal: fiscal.value,
+      gates: gates.value,
+    });
 
-  if (userAccessLevel >= OWNER_ACCESS_LEVEL || userAccessLevel >= MAINTAINER_ACCESS_LEVEL) {
-    try {
+    if (userAccessLevel >= OWNER_ACCESS_LEVEL || userAccessLevel >= MAINTAINER_ACCESS_LEVEL) {
       await saveYamlToRepository(yamlData);
       submissionStatus.value = 'YAML file saved successfully!';
-    } catch (error: any) {
-      console.error('Error saving YAML file:', error.response?.data || error.message);
-      submissionStatus.value = 'Error saving YAML file.';
-    }
-  } else if (userAccessLevel >= DEVELOPER_ACCESS_LEVEL) {
-    try {
+    } else if (userAccessLevel >= DEVELOPER_ACCESS_LEVEL) {
       await createMergeRequest(yamlData);  // Developer submits a merge request
       submissionStatus.value = 'Your changes have been submitted for review.';
-    } catch (error: any) {
-      console.error('Error creating merge request:', error.response?.data || error.message);
-      submissionStatus.value = 'Error submitting merge request.';
+    } else {
+      submissionStatus.value = 'You do not have permission to edit this file.';
     }
-  } else {
-    submissionStatus.value = 'You do not have permission to edit this file.';
+  } catch (error: any) {
+    console.error('Error during submission:', error.response?.data || error.message);
+    submissionStatus.value = 'Error during submission.';
+  } finally {
+    isLoading.value = false;  // Ensure loading state is always stopped
   }
 }
+
 
 
 
@@ -509,8 +547,13 @@ onMounted(() => {
       </div>
 
       <div v-else class="space-y-6">
+        <!-- Loading message -->
+        <div v-if="isLoading" class="text-gray-600 dark:text-gray-200 text-center">
+          Submitting your changes, please wait...
+        </div>
+
         <!-- Repository Selection -->
-        <div class="space-y-2">
+        <div v-if="!isLoading" class="space-y-2">
           <label class="block text-gray-700 dark:text-gray-200 font-medium">Repository</label>
           <select 
             :disabled="isLocked" 
@@ -520,14 +563,14 @@ onMounted(() => {
           </select>
 
           <u-button v-if="!isLocked" @click="lockSelection" class="mt-2 bg-green-500 hover:bg-green-600 text-white">
-  Select Repository
-</u-button>
+            Select Repository
+          </u-button>
         </div>
 
-        <p v-if="fileExistsStatus" class="text-sm text-gray-600 dark:text-gray-300">{{ fileExistsStatus }}</p>
+        <p v-if="fileExistsStatus && !isLoading" class="text-sm text-gray-600 dark:text-gray-300">{{ fileExistsStatus }}</p>
 
         <!-- Form to submit data -->
-        <form @submit.prevent="handleSubmit" v-if="isLocked" class="space-y-6">
+        <form @submit.prevent="handleSubmit" v-if="isLocked && !isLoading" class="space-y-6">
           <!-- Project Contact Section -->
           <div class="space-y-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
             <h3 class="text-lg font-semibold text-gray-700 dark:text-gray-100">Project Contact</h3>
@@ -585,18 +628,16 @@ onMounted(() => {
 
           <!-- Submit Button -->
           <u-button type="submit" class="mt-4 bg-green-500 hover:bg-green-600 text-white">
-  Submit
-</u-button>
+            Submit
+          </u-button>
 
         </form>
 
         <!-- Display submission status -->
-        <div v-if="submissionStatus" :class="submissionStatus.startsWith('Error') ? 'bg-red-500 text-white p-4 rounded' : 'bg-green-500 text-white p-4 rounded'" class="mt-4">
-  <p>{{ submissionStatus }}</p>
-</div>
+        <div v-if="submissionStatus && !isLoading" :class="submissionStatus.startsWith('Error') ? 'bg-red-500 text-white p-4 rounded' : 'bg-green-500 text-white p-4 rounded'" class="mt-4">
+          <p>{{ submissionStatus }}</p>
+        </div>
       </div>
     </u-card>
   </u-container>
 </template>
-
-

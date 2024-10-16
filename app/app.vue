@@ -1,10 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue';
-import { generateCodeVerifier, generateCodeChallenge } from './pkce';
+import { onMounted, ref } from 'vue';
+import { generateCodeChallenge, generateCodeVerifier } from './pkce';
 
-const CLIENT_ID = '620c86ee3984d2790655b72a6470ed7a0e7073236e6e0165e85dee0df815458e';  // Client ID
+const CLIENT_ID = ''; // Client ID
 const SCOPES = 'read_user api';
-const GITLAB_HOST_URL = 'https://gitlab.k8s.cloud.statcan.ca/';
+const GITLAB_HOST_URL = 'https://gitlab.ca/';// GITLAB HOST URL
 
 const authUrl = ref('');
 
@@ -14,17 +14,18 @@ onMounted(async () => {
   if (typeof window !== 'undefined') {
     // Dynamically set the REDIRECT_URI based on the environment
     if (window.location.hostname === 'localhost') {
-      REDIRECT_URI = 'http://localhost:3000/auth';  // Local environment
-    } else {
-      REDIRECT_URI = 'https://neil_mispelaar.pages.cloud.statcan.ca/nuxt-gitlab-authentication-experiment/auth';  // GitLab Pages environment (make sure it points to your GitLab Pages auth endpoint)
+      REDIRECT_URI = 'http://localhost:3000/auth'; // Local environment
+    }
+    else {
+      REDIRECT_URI = ''; // GitLab Pages environment (make sure it points to your GitLab Pages auth endpoint)
     }
 
     console.log('REDIRECT_URI set to:', REDIRECT_URI);
 
-    const codeVerifier = generateCodeVerifier();  // Generate codeVerifier
+    const codeVerifier = generateCodeVerifier(); // Generate codeVerifier
     console.log('Generated codeVerifier:', codeVerifier);
 
-    localStorage.setItem('code_verifier', codeVerifier);  // Store codeVerifier in localStorage
+    localStorage.setItem('code_verifier', codeVerifier); // Store codeVerifier in localStorage
     console.log('Stored codeVerifier:', localStorage.getItem('code_verifier'));
 
     const codeChallenge = await generateCodeChallenge(codeVerifier);
@@ -40,7 +41,6 @@ onMounted(async () => {
   }
 });
 </script>
-
 
 <template>
   <div>

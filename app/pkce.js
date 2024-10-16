@@ -1,5 +1,3 @@
-
-
 function generateCodeVerifier(length = 128) {
   const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
   let result = '';
@@ -7,10 +5,9 @@ function generateCodeVerifier(length = 128) {
     const randomIndex = Math.floor(Math.random() * charset.length);
     result += charset[randomIndex];
   }
-  console.log('Generated codeVerifier:', result);  
+  console.log('Generated codeVerifier:', result);
   return result;
 }
-
 
 async function generateCodeChallenge(codeVerifier) {
   const encoder = new TextEncoder();
